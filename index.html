@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>라이어 게임 (모바일/최대 30명)</title>
+<style>
+  :root{ --bg:#fff8f0; --card:#ffffff; --ink:#111; --muted:#666; --primary:#87CEEB; --danger:#ff6b6b; --ok:#2f9e44; }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{margin:0; font-family:"Pretendard","맑은 고딕","Malgun Gothic",system-ui,Segoe UI,Apple SD Gothic Neo,Arial,sans-serif; background:var(--bg); color:var(--ink);}
+  .container{max-width:980px; margin:0 auto; padding:16px}
+  .card{background:var(--card); border:1px solid #eee; border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.06); padding:16px}
+  h1{font-size:22px; margin:0 0 10px}
+  h2{font-size:18px; margin:0 0 8px}
+  p{margin:6px 0}
+  .row{display:flex; gap:10px; flex-wrap:wrap; align-items:center}
+  .grid{display:grid; gap:12px}
+  .btn{border:0; background:var(--primary); color:#000; padding:12px 14px; border-radius:12px; font-weight:700; cursor:pointer; box-shadow:0 6px 18px rgba(135,206,235,.45);}
+  .btn:active{transform:scale(.98)}
+  .btn.ghost{background:#f1f7fb; box-shadow:none; border:1px dashed #bcddef}
+  .btn.danger{background:var(--danger); color:#fff; box-shadow:0 6px 18px rgba(255,107,107,.35)}
+  .muted{color:var(--muted); font-size:13px}
+  input,select{padding:12px; border-radius:10px; border:1px solid #ddd; font-size:16px}
+  input[type="number"]{width:110px}
+  .list{display:grid; grid-template-columns:repeat(auto-fit,minmax(260px,1fr)); gap:14px}
+  .seat{border:1px solid #eee; border-radius:12px; padding:12px; background:#fff}
+  .seat h3{margin:0 0 8px; font-size:16px}
+  .qr{display:flex; gap:10px; align-items:center}
+  canvas{background:#fff; border-radius:8px}
+  .tag{display:inline-block; padding:4px 8px; border-radius:999px; font-size:12px; background:#eef7ff}
+  .success{color:var(--ok); font-weight:700}
+  .error{color:var(--danger); font-weight:700}
+  .warn{color:#b26b00; font-weight:700}
+  .center{text-align:center}
+  .mb8{margin-bottom:8px}
+  .mb12{margin-bottom:12px}
+  .mb16{margin-bottom:16px}
+  .mt8{margin-top:8px}
+  .mt12{margin-top:12px}
+  .mt16{margin-top:16px}
+  .hidden{display:none}
+
+  #resultsView .board{display:grid; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); gap:14px}
+  #resultsView .tile{background:#fff; border:1px solid #eee; border-radius:12px; padding:14px; text-align:center}
+  #resultsView .tile h3{margin:0 0 6px; font-size:16px}
+  #resultsView .pill{display:inline-block; padding:4px 10px; border-radius:999px; font-weight:700; font-size:12px}
+  .pill.civ{background:#e6ffec}
+  .pill.liar{background:#ffe8e8}
+
+  .alert{padding:10px 12px; border-radius:10px; background:#fff7e6; border:1px solid #ffe0a3; color:#7a4d00; margin-top:10px}
+  @media (max-width:600px){
+    .grid{gap:10px}
+    .list{grid-template-columns:1fr}
+    input,select{width:100%}
+    .row.stacked{flex-direction:column; align-items:stretch}
+  }
+</style>
+</head>
+<body>
+<div class="container">
+  <!-- ADMIN VIEW -->
+  <section id="admin" class="card">
+    <h1>라이어 게임 – 관리자</h1>
+    <p class="muted">최대 30명 / 링크·QR / 라이어 수 조절 / 정답 키워드 설정 / 결과 공유 화면</p>
+
+    <div id="envAlert" class="alert hidden">
+      HTTPS가 아닌 환경이거나 브라우저에서 WebCrypto가 차단되어 있습니다.  
+      <b>GitHub Pages(https)에서 사용</b>하는 것을 권장합니다. 지금은 <b>임시 폴백 모드(암호 없이 링크 생성)</b>로 진행합니다.
+    </div>
+
+    <div class="grid" style="grid-template-columns:1fr 1fr; align-items:start">
+      <div>
+        <h2>설정</h2>
+        <div class="row stacked mb12">
+          <label>참여자 수 (1–30)
+            <input id="playerCount" type="number" min="1" max="30" value="10" />
+          </label>
+          <label>라이어 수
+            <input id="liarCount" type="number" min="0" max="29" value="2" />
+          </label>
+          <label>정답 키워드
+            <input id="keyword" type="text" placeholder="예: 케이크" />
+          </label>
+          <label>보안 암호 (플레이어/결과 화면 공통)
+            <input id="passphrase" type="text" placeholder="예: 암호" />
+          </label>
+          <label><input id="includeKeywordInResults" type="checkbox" checked /> 결과 화면에 키워드 포함</label>
+        </div>
+        <div class="row">
+          <button id="generate" class="btn">좌석 링크 & QR 생성</button>
+          <button id="reset" class="btn ghost">초기화</button>
+        </div>
+        <p class="muted mt8">* 생성 후 각 좌석 링크를 공유하거나 QR을 스캔하게 하세요. 플레이어는 링크를 열고 <b>보안 암호</b>를 입력하면 역할을 볼 수 있습니다.</p>
+      </div>
+
+      <div>
+        <h2>공유/결과 링크</h2>
+        <div class="card mb12">
+          <div class="mb8"><b>관리자 페이지 주소</b></div>
+          <div id="adminURL" class="muted" style="word-break:break-all"></div>
+          <div class="row mt8">
+            <button id="copyAdmin" class="btn ghost">관리자 링크 복사</button>
+            <span id="copyStatus" class="muted"></span>
+          </div>
+        </div>
+        <div id="resultsShare" class="card hidden">
+          <div class="mb8"><b>결과 화면</b> (빔프로젝터/화면 공유용)</div>
+          <div class="row mb8">
+            <button id="openResults" class="btn">결과 화면 열기</button>
+            <button id="copyResults" class="btn ghost">결과 링크 복사</button>
+          </div>
+          <div class="qr" id="qrResultsWrap">
+            <div id="qr-results"></div>
+            <div style="flex:1">
+              <div id="resultsURL" class="muted" style="word-break:break-all"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="seatsWrap" class="mt16 hidden">
+      <h2>좌석별 링크/QR</h2>
+      <div id="seatList" class="list"></div>
+
+      <h2 class="mt16">관리자용 라이어 목록</h2>
+      <p class="muted">아래 좌석이 라이어입니다. (플레이 중엔 비공개 유지!)</p>
+      <div id="liarList" class="row"></div>
+    </div>
+  </section>
+
+  <!-- PLAYER VIEW -->
+  <section id="player" class="card hidden">
+    <h1 class="mb8">라이어 게임 – 플레이어</h1>
+    <p id="infoLine" class="muted mb12"></p>
+
+    <div id="passForm" class="row stacked mb12">
+      <input id="passInput" type="password" placeholder="관리자가 알려준 보안 암호" />
+      <button id="unlock" class="btn">보기</button>
+      <button id="toggleVisible" class="btn ghost">암호 보기</button>
+      <div class="muted">* 암호가 맞아야 역할이 해독됩니다.</div>
+    </div>
+
+    <div id="result" class="hidden">
+      <div id="roleTag" class="tag"></div>
+      <h2 id="roleTitle" class="mt12"></h2>
+      <p id="keywordLine" class="mt8"></p>
+      <p id="metaLine" class="muted"></p>
+      <div class="row mt12">
+        <button id="hide" class="btn ghost">숨기기</button>
+        <button id="show" class="btn">다시 보기</button>
+      </div>
+    </div>
+
+    <p id="errorMsg" class="error mt12"></p>
+  </section>
+
+  <!-- RESULTS VIEW -->
+  <section id="resultsView" class="card hidden">
+    <h1>라이어 게임 – 결과 화면</h1>
+    <p class="muted" id="resultsInfo">관리자가 만든 링크입니다. 보안 암호를 입력해 공개하세요.</p>
+
+    <div id="resultsLock" class="row stacked mb12">
+      <input id="resultsPass" type="password" placeholder="보안 암호" />
+      <button id="resultsUnlock" class="btn">해제</button>
+      <button id="resultsToggleVisible" class="btn ghost">암호 보기</button>
+    </div>
+
+    <div id="resultsPanel" class="hidden">
+      <div class="row mb12">
+        <button id="toggleLiars" class="btn danger">라이어 공개</button>
+        <button id="toggleKeyword" class="btn ghost">키워드 숨김</button>
+      </div>
+      <div id="summary" class="mb12"></div>
+      <div id="kwBox" class="mb12 hidden"></div>
+      <div class="board" id="board"></div>
+    </div>
+
+    <p id="resultsError" class="error mt12"></p>
+  </section>
+</div>
+
+<!-- Minimal QRCode (MIT, Kazuhiko Arase) -->
+<script>
+/*! qrcode.js v1.0.0 (MIT) — trimmed for brevity */
+!function(){function t(t){this.mode=n.MODE_8BIT_BYTE,this.data=t,this.parsedData=[];for(var e=0,r=this.data.length;e<r;e++){var i=[],o=this.data.charCodeAt(e);o>65536?(i[0]=240|(1835008&o)>>>18,i[1]=128|(258048&o)>>>12,i[2]=128|(4032&o)>>>6,i[3]=128|63&o):o>2048?(i[0]=224|(61440&o)>>>12,i[1]=128|(4032&o)>>>6,i[2]=128|63&o):o>128?(i[0]=192|(1984&o)>>>6,i[1]=128|63&o):i[0]=o,this.parsedData.push(i)}this.parsedData=Array.prototype.concat.apply([],this.parsedData)}function e(t,e){this.typeNumber=t,this.errorCorrectLevel=e,this.modules=null,this.moduleCount=0,this.dataCache=null,this.dataList=[]}var n=function(){var t=function(t){var e=0;for(;0!=t;)e++,t>>>=1;return e};return{PAD0:236,PAD1:17,MODE_NUMBER:1,MODE_ALPHA_NUM:2,MODE_8BIT_BYTE:4,MODE_KANJI:8,getBCHTypeInfo:function(t){for(var e=t<<10;this.getBCHDigit(e)-this.getBCHDigit(1335)>=0;)e^=1335<<this.getBCHDigit(e)-this.getBCHDigit(1335);return t<<10|e},getBCHTypeNumber:function(t){for(var e=t<<12;this.getBCHDigit(e)-this.getBCHDigit(7973)>=0;)e^=7973<<this.getBCHDigit(e)-this.getBCHDigit(7973);return t<<12|e},getBCHDigit:t}}();t.prototype={getLength:function(){return this.parsedData.length},write:function(t){for(var e=0,r=this.parsedData.length;e<r;e++)t.put(this.parsedData[e],8)}};var a={L:1,M:0,Q:3,H:2};e.prototype={addData:function(e){var r=new t(e);this.dataList.push(r),this.dataCache=null},isDark:function(t,e){if(0>t||this.moduleCount<=t||0>e||this.moduleCount<=e)throw new Error(t+","+e);return this.modules[t][e]},getModuleCount:function(){return this.moduleCount},make:function(){if(this.typeNumber<1){for(var t=1;t<40;t++){for(var r=new e(t,this.errorCorrectLevel),i=0;i<this.dataList.length;i++)r.addData(this.dataList[i]);if(r.makeImpl(),r.isFit())return this.typeNumber=r.typeNumber,void(this.modules=r.modules)}this.typeNumber=4}this.makeImpl()},isFit:function(){return null!=this.modules},makeImpl:function(){this.moduleCount=21+4*(this.typeNumber-1),this.modules=new Array(this.moduleCount);for(var t=0;t<this.moduleCount;t++){this.modules[t]=new Array(this.moduleCount);for(var e=0;e<this.moduleCount;e++)this.modules[t][e]=null}this.setupPositionProbePattern(0,0),this.setupPositionProbePattern(this.moduleCount-7,0),this.setupPositionProbePattern(0,this.moduleCount-7),this.setupTimingPattern(),this.setupTypeInfo(!0),this.typeNumber>=7&&this.setupTypeNumber(!0);for(var r=0,i=this.createData();r<i.length;r++)for(var o=0;o<8;o++)this.modules[~~(r/this.moduleCount)][r%this.moduleCount]=1==(i[r]>>>7-o&1)},setupPositionProbePattern:function(t,e){for(var r=-1;7>=r;r++)if(!(0>t+r||this.moduleCount<=t+r))for(var i=-1;7>=i;i++)0>e+i||this.moduleCount<=e+i||(this.modules[t+r][e+i]=r>=0&&6>=r&&(0==i||6==i)||i>=0&&6>=i&&(0==r||6==r)||r>=2&&4>=r&&i>=2&&4>=i)},setupTimingPattern:function(){for(var t=8;t<this.moduleCount-8;t++)null==this.modules[t][6]&&(this.modules[t][6]=0==t%2),null==this.modules[6][t]&&(this.modules[6][t]=0==t%2)},setupTypeNumber:function(t){for(var e=n.getBCHTypeNumber(this.typeNumber),r=0;18>r;r++){var i=!t&&1==r%3,o=1==e>>>r&1;this.modules[~~(r/3)+0][r%3+this.moduleCount-8-3]=o,!i&&(this.modules[r%3+0][~~(r/3)+this.moduleCount-8-3]=o)}},setupTypeInfo:function(t){for(var e=a.M<<3|0,r=n.getBCHTypeInfo(e),i=0;15>i;i++){var o=!t&&1==i%3;this.modules[0][i]=1==r>>>i&1,!o&&(this.modules[i][0]=1==r>>>i&1)}},createData:function(){for(var t=[],e=0;e<this.dataList.length;e++){var r=this.dataList[e];t.push(4),t.push(r.getLength()),r.write({buffer:[],put:function(e,r){for(var i=r-1;i>=0;i--)t.push(1==e>>>i&1?1:0)}})}return t}};window.QRCode = function mountQR(el, text) {
+  // typeNumber=0 으로 만들어 용량에 맞는 버전을 자동 선택
+  var qr = new e(0, a.M);       // <-- 0이면 자동 선택
+  qr.addData(text);
+  qr.make();
+
+  var count = qr.getModuleCount();
+  // 사이즈를 모듈 수에 맞춰 동적으로 계산 (선명 + 과도한 확대 방지)
+  var size  = Math.min(320, Math.max(160, count * 6));
+  var canvas = document.createElement('canvas');
+  canvas.width = canvas.height = size;
+  var ctx = canvas.getContext('2d');
+
+  var tileW = size / count;
+  var tileH = size / count;
+
+  ctx.fillStyle = '#fff';
+  ctx.fillRect(0, 0, size, size);
+  ctx.fillStyle = '#000';
+
+  for (var r = 0; r < count; r++) {
+    for (var c = 0; c < count; c++) {
+      if (qr.isDark(r, c)) {
+        // 픽셀 경계 보정
+        var x = Math.round(c * tileW);
+        var y = Math.round(r * tileH);
+        var w = Math.ceil(tileW);
+        var h = Math.ceil(tileH);
+        ctx.fillRect(x, y, w, h);
+      }
+    }
+  }
+  el.innerHTML = '';
+  el.appendChild(canvas);
+};
+</script>
+
+<script>
+// ===== Base64URL helpers =====
+const b64u = {
+  toUrl: (buf) => btoa(String.fromCharCode(...new Uint8Array(buf))).replaceAll('+','-').replaceAll('/','_').replace(/=+$/,''),
+  fromUrl: (s) => { s=s.replaceAll('-','+').replaceAll('_','/'); const pad=s.length%4; if(pad) s+='='.repeat(4-pad); const bin=atob(s); const bytes=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) bytes[i]=bin.charCodeAt(i); return bytes.buffer; }
+};
+
+// ===== Safe crypto helpers (with fallback) =====
+const hasSubtle = !!(window.crypto && window.crypto.subtle);
+async function deriveKey(pass, salt){
+  const enc = new TextEncoder();
+  const baseKey = await crypto.subtle.importKey('raw', enc.encode(pass), {name:'PBKDF2'}, false, ['deriveKey']);
+  return crypto.subtle.deriveKey({name:'PBKDF2', salt, iterations:120000, hash:'SHA-256'}, baseKey, {name:'AES-GCM', length:256}, false, ['encrypt','decrypt']);
+}
+async function encryptJSON(obj, pass){
+  const enc = new TextEncoder();
+  const iv = crypto.getRandomValues(new Uint8Array(12));
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const key = await deriveKey(pass, salt);
+  const data = enc.encode(JSON.stringify(obj));
+  const ct = await crypto.subtle.encrypt({name:'AES-GCM', iv}, key, data);
+  const packed = new Uint8Array(16+12+ct.byteLength);
+  packed.set(salt,0); packed.set(iv,16); packed.set(new Uint8Array(ct),28);
+  return b64u.toUrl(packed.buffer);
+}
+async function decryptJSON(payload, pass){
+  const buf = b64u.fromUrl(payload); const bytes = new Uint8Array(buf);
+  const salt = bytes.slice(0,16); const iv = bytes.slice(16,28); const ct = bytes.slice(28);
+  const key = await deriveKey(pass, salt);
+  const pt = await crypto.subtle.decrypt({name:'AES-GCM', iv}, key, ct);
+  return JSON.parse(new TextDecoder().decode(pt));
+}
+// fallback: plain (unencrypted) token
+function encodePlain(obj){ return b64u.toUrl(new TextEncoder().encode(JSON.stringify(obj))); }
+function decodePlain(token){ return JSON.parse(new TextDecoder().decode(b64u.fromUrl(token))); }
+
+// ===== Mode routing =====
+const qs = new URLSearchParams(location.search);
+const payload = qs.get('payload');
+const resultsParam = qs.get('results');
+const plainFlag = qs.get('plain'); // "1" if plain mode
+
+const adminView   = document.getElementById('admin');
+const playerView  = document.getElementById('player');
+const resultsView = document.getElementById('resultsView');
+
+const adminURL = document.getElementById('adminURL');
+const copyAdmin = document.getElementById('copyAdmin');
+const copyStatus = document.getElementById('copyStatus');
+
+adminURL.textContent = location.origin + location.pathname;
+copyAdmin.addEventListener('click', async () => {
+  try{ await navigator.clipboard.writeText(location.origin + location.pathname); copyStatus.textContent = '복사 완료!'; setTimeout(()=>copyStatus.textContent='',1500);}catch(e){copyStatus.textContent='복사 실패: 권한을 확인하세요';}
+});
+
+if (payload) { show('player'); initPlayer(); }
+else if (resultsParam) { show('results'); initResults(); }
+else { show('admin'); initAdmin(); }
+
+function show(which){
+  adminView.classList.add('hidden'); playerView.classList.add('hidden'); resultsView.classList.add('hidden');
+  if(which==='admin') adminView.classList.remove('hidden');
+  if(which==='player') playerView.classList.remove('hidden');
+  if(which==='results') resultsView.classList.remove('hidden');
+}
+
+function initAdmin(){
+  const playerCount = document.getElementById('playerCount');
+  const liarCount   = document.getElementById('liarCount');
+  const keyword     = document.getElementById('keyword');
+  const passphrase  = document.getElementById('passphrase');
+  const includeKW   = document.getElementById('includeKeywordInResults');
+  const generateBtn = document.getElementById('generate');
+  const resetBtn    = document.getElementById('reset');
+  const seatsWrap   = document.getElementById('seatsWrap');
+  const seatList    = document.getElementById('seatList');
+  const liarList    = document.getElementById('liarList');
+  const envAlert    = document.getElementById('envAlert');
+
+  const resultsShare = document.getElementById('resultsShare');
+  const resultsURL   = document.getElementById('resultsURL');
+  const copyResults  = document.getElementById('copyResults');
+  const openResults  = document.getElementById('openResults');
+  const qrResultsBox = document.getElementById('qr-results');
+
+  // show alert when crypto is unavailable
+  if(!hasSubtle || location.protocol !== 'https:' && location.hostname !== 'localhost'){
+    envAlert.classList.remove('hidden');
+  }
+
+  playerCount.addEventListener('change', () => {
+    if(+playerCount.value > 30) playerCount.value = 30;
+    liarCount.max = Math.max(0, +playerCount.value - 1);
+    if(+liarCount.value > +liarCount.max) liarCount.value = liarCount.max;
+  });
+
+  let currentResultsLink = '';
+
+  generateBtn.addEventListener('click', async () => {
+    try{
+      const N = Math.max(1, Math.min(30, +playerCount.value||0));
+      const L = Math.max(0, Math.min(N-1, +liarCount.value||0));
+      const K = (keyword.value||'').trim();
+      const P = (passphrase.value||'').trim();
+      const incKW = !!includeKW.checked;
+      if(!K){ alert('정답 키워드를 입력하세요.'); return; }
+      if(!P && hasSubtle){ alert('보안 암호를 입력하세요. (플레이어/결과 화면에서 사용할 값)'); return; }
+
+      // choose L unique liar seats
+      const seats = Array.from({length:N}, (_,i)=>i+1);
+      for(let i=seats.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [seats[i],seats[j]]=[seats[j],seats[i]]; }
+      const liarSeats = seats.slice(0,L).sort((a,b)=>a-b);
+
+      const sessionId = Math.random().toString(36).slice(2,10);
+
+      seatList.innerHTML = ''; liarList.innerHTML = '';
+
+      for(let s=1; s<=N; s++){
+        const role = liarSeats.includes(s) ? 'liar' : 'civilian';
+        const payloadObj = { v:1, sessionId, seat:s, total:N, role, keyword: K };
+
+        let token, url;
+        if(hasSubtle && (location.protocol==='https:' || location.hostname==='localhost')){
+          token = await encryptJSON(payloadObj, P);
+          url = location.origin + location.pathname + '?payload=' + token;
+        }else{
+          token = encodePlain(payloadObj);
+          url = location.origin + location.pathname + '?payload=' + token + '&plain=1';
+        }
+
+        // seat card
+        const seat = document.createElement('div');
+        seat.className = 'seat';
+        seat.innerHTML = `
+          <h3>좌석 #${s} <span class="tag">링크</span></h3>
+          <div class="qr">
+            <div class="qrBox" id="qr-${s}"></div>
+            <div style="flex:1">
+              <div style="word-break:break-all" class="muted mb8">${url}</div>
+              <div class="row">
+                <button class="btn" data-copy="${s}">링크 복사</button>
+                <button class="btn ghost" data-open="${s}">새 창 열기</button>
+              </div>
+            </div>
+          </div>`;
+        seatList.appendChild(seat);
+        new QRCode(seat.querySelector('#qr-'+s), url);
+
+        seat.querySelector(`[data-copy="${s}"]`).addEventListener('click', async ()=>{
+          try{ await navigator.clipboard.writeText(url); alert(`좌석 #${s} 링크를 복사했습니다.`);}catch{ alert('클립보드 권한이 필요합니다.'); }
+        });
+        seat.querySelector(`[data-open="${s}"]`).addEventListener('click', ()=> window.open(url,'_blank'));
+      }
+
+      // Admin liar list
+      if(liarSeats.length===0){ liarList.textContent = '라이어 없음'; }
+      else { liarSeats.forEach(n=>{ const b=document.createElement('span'); b.className='tag'; b.textContent='좌석 #'+n; liarList.appendChild(b); }); }
+
+      // Results payload/link
+      const resultsPayload = { v:1, sessionId, total:N, liars: liarSeats, keyword: incKW ? K : null, includeKeyword: incKW };
+      let resultsToken;
+      if(hasSubtle && (location.protocol==='https:' || location.hostname==='localhost')){
+        resultsToken = await encryptJSON(resultsPayload, P);
+        currentResultsLink = location.origin + location.pathname + '?results=' + resultsToken;
+      }else{
+        resultsToken = encodePlain(resultsPayload);
+        currentResultsLink = location.origin + location.pathname + '?results=' + resultsToken + '&plain=1';
+      }
+
+      resultsURL.textContent = currentResultsLink;
+      document.getElementById('resultsShare').classList.remove('hidden');
+      const qrWrap = document.getElementById('qrResultsWrap');
+      qrWrap.classList.remove('hidden');
+      qrResultsBox.innerHTML = '';
+      new QRCode(qrResultsBox, currentResultsLink);
+
+      copyResults.onclick = async () => {
+        try{ await navigator.clipboard.writeText(currentResultsLink); alert('결과 화면 링크를 복사했습니다.'); }catch{ alert('복사 실패: 권한을 확인하세요.'); }
+      };
+      openResults.onclick = () => window.open(currentResultsLink, '_blank');
+
+      seatsWrap.classList.remove('hidden');
+    }catch(err){
+      alert('링크 생성 중 오류가 발생했습니다.\n' + (err.message||err));
+      console.error(err);
+    }
+  });
+
+  resetBtn.addEventListener('click', ()=>{
+    seatList.innerHTML=''; liarList.innerHTML=''; document.getElementById('resultsShare').classList.add('hidden'); keyword.value='';
+  });
+}
+
+function initPlayer(){
+  const infoLine = document.getElementById('infoLine');
+  const passForm = document.getElementById('passForm');
+  const passInput= document.getElementById('passInput');
+  const unlock   = document.getElementById('unlock');
+  const toggleVisible = document.getElementById('toggleVisible');
+  const result   = document.getElementById('result');
+  const roleTag  = document.getElementById('roleTag');
+  const roleTitle= document.getElementById('roleTitle');
+  const keywordLine = document.getElementById('keywordLine');
+  const metaLine = document.getElementById('metaLine');
+  const errorMsg = document.getElementById('errorMsg');
+  const hideBtn  = document.getElementById('hide');
+  const showBtn  = document.getElementById('show');
+
+  infoLine.textContent = '휘경쌤이 제공한 링크입니다. 보안 암호를 입력하면 당신의 역할이 표시됩니다.';
+
+  toggleVisible.addEventListener('click', () => {
+    passInput.type = passInput.type === 'password' ? 'text' : 'password';
+    toggleVisible.textContent = passInput.type === 'password' ? '암호 보기' : '암호 숨기기';
+  });
+
+  async function reveal(){
+    errorMsg.textContent = '';
+    const P = passInput.value.trim();
+
+    try{
+      let data;
+      if(plainFlag === '1'){ // fallback
+        data = decodePlain(payload);
+      }else{
+        if(!P){ errorMsg.textContent = '보안 암호를 입력하세요.'; return; }
+        data = await decryptJSON(payload, P);
+      }
+
+      passForm.classList.add('hidden');
+      result.classList.remove('hidden');
+
+      if(data.role === 'liar'){
+        roleTag.textContent = '라이어'; roleTitle.textContent = '당신은 라이어입니다!'; roleTag.style.background = '#ffe8e8';
+        keywordLine.textContent = '정답 키워드는 비밀입니다.';
+      } else {
+        roleTag.textContent = '시민'; roleTitle.textContent = '당신은 시민입니다!'; roleTag.style.background = '#e6ffec';
+        keywordLine.textContent = '정답 키워드: ' + data.keyword;
+      }
+      metaLine.textContent = `좌석 #${data.seat} / 총 ${data.total}명 · 세션 ${data.sessionId}`;
+    }catch(e){
+      errorMsg.textContent = '암호가 올바르지 않거나 링크가 손상되었습니다.';
+    }
+  }
+
+  unlock.addEventListener('click', reveal);
+  passInput.addEventListener('keydown', (e)=>{ if(e.key==='Enter') reveal(); });
+
+  hideBtn.addEventListener('click', ()=>{ result.classList.add('hidden'); passForm.classList.remove('hidden'); passInput.focus(); });
+  showBtn.addEventListener('click', ()=>{ result.classList.remove('hidden'); passForm.classList.add('hidden'); });
+}
+
+function initResults(){
+  const info = document.getElementById('resultsInfo');
+  const lock = document.getElementById('resultsLock');
+  const pass = document.getElementById('resultsPass');
+  const unlock = document.getElementById('resultsUnlock');
+  const toggleVisible = document.getElementById('resultsToggleVisible');
+  const panel = document.getElementById('resultsPanel');
+  const board = document.getElementById('board');
+  const summary = document.getElementById('summary');
+  const kwBox = document.getElementById('kwBox');
+  const toggleLiars = document.getElementById('toggleLiars');
+  const toggleKeyword = document.getElementById('toggleKeyword');
+  const error = document.getElementById('resultsError');
+
+  toggleVisible.addEventListener('click', () => {
+    pass.type = pass.type === 'password' ? 'text' : 'password';
+    toggleVisible.textContent = pass.type === 'password' ? '암호 보기' : '암호 숨기기';
+  });
+
+  let data = null; let liarsShown=false; let kwShown=false;
+
+  async function reveal(){
+    error.textContent='';
+    try{
+      if(plainFlag === '1'){ data = decodePlain(resultsParam); }
+      else{
+        const P = pass.value.trim(); if(!P){ error.textContent='보안 암호를 입력하세요.'; return; }
+        data = await decryptJSON(resultsParam, P);
+      }
+
+      lock.classList.add('hidden'); panel.classList.remove('hidden');
+      summary.innerHTML = `<b>세션:</b> ${data.sessionId || '-'} · <b>총 인원:</b> ${data.total}명 · <b>라이어:</b> ${data.liars.length}명`;
+      kwBox.textContent = data.includeKeyword && data.keyword ? `정답 키워드: ${data.keyword}` : '정답 키워드: (숨김)';
+      if(data.includeKeyword) { kwBox.classList.remove('hidden'); kwShown=true; toggleKeyword.textContent='키워드 숨김'; }
+      else { kwBox.classList.add('hidden'); kwShown=false; toggleKeyword.textContent='키워드 공개'; }
+
+      board.innerHTML='';
+      for(let s=1;s<=data.total;s++){
+        const isLiar = data.liars.includes(s);
+        const t=document.createElement('div');
+        t.className='tile';
+        t.innerHTML = `<h3>좌석 #${s}</h3><div class="pill ${isLiar?'liar':'civ'}">${isLiar? (liarsShown?'라이어':'?') : '시민'}</div>`;
+        board.appendChild(t);
+      }
+    }catch(e){ error.textContent='암호가 올바르지 않거나 링크가 손상되었습니다.'; }
+  }
+
+  function refreshBoard(){
+    const tiles = board.querySelectorAll('.tile .pill');
+    tiles.forEach((el, idx)=>{
+      const seat = idx+1;
+      const isLiar = data.liars.includes(seat);
+      el.textContent = isLiar ? (liarsShown ? '라이어' : '?') : '시민';
+      el.className = 'pill ' + (isLiar?'liar':'civ');
+    });
+  }
+
+  unlock.addEventListener('click', reveal);
+  pass.addEventListener('keydown', e=>{ if(e.key==='Enter') reveal(); });
+
+  toggleLiars.addEventListener('click', ()=>{ if(!data) return; liarsShown=!liarsShown; toggleLiars.textContent = liarsShown? '라이어 가리기' : '라이어 공개'; refreshBoard(); });
+  toggleKeyword.addEventListener('click', ()=>{ if(!data) return; kwShown=!kwShown; if(kwShown && data.keyword){ kwBox.textContent = '정답 키워드: ' + data.keyword; kwBox.classList.remove('hidden'); toggleKeyword.textContent='키워드 숨김'; } else { kwBox.textContent='정답 키워드: (숨김)'; kwBox.classList.add('hidden'); toggleKeyword.textContent='키워드 공개'; } });
+}
+</script>
+</body>
+</html>
